@@ -1,0 +1,2 @@
+"""AI education backend package."""
+

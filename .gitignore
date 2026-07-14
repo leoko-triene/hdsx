@@ -1,0 +1,57 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+node_modules/
+frontend/dist/
+storage/uploads/
+storage/parsed/
+storage/submissions/
+storage/generated/
+*.log
+.downloads/
+.runtime/
+
+# IDE 与操作系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+
+# 前端/构建缓存
+*.tsbuildinfo
+frontend/.vite/
+frontend/coverage/
+
+# 本地数据库、缓存和密钥
+*.db
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+
+# 大型模型与运行数据
+models/
+checkpoints/
+*.bin
+*.safetensors
+*.gguf
+storage/*
+!storage/.gitkeep
+
+# 二进制学习资料与生成交付物不进入源码仓库
+*.pdf
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.xls
+*.xlsx
+*.zip
+*.7z
+*.rar
+
