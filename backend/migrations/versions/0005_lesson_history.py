@@ -9,8 +9,13 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("lesson_resources", sa.Column("is_saved", sa.Boolean(), nullable=False, server_default=sa.false()))
-    op.create_index("ix_lesson_resources_is_saved", "lesson_resources", ["is_saved"])
+    inspector = sa.inspect(op.get_bind())
+    columns = {column["name"] for column in inspector.get_columns("lesson_resources")}
+    if "is_saved" not in columns:
+        op.add_column("lesson_resources", sa.Column("is_saved", sa.Boolean(), nullable=False, server_default=sa.false()))
+    indexes = inspector.get_indexes("lesson_resources")
+    if not any(item["name"] == "ix_lesson_resources_is_saved" for item in indexes):
+        op.create_index("ix_lesson_resources_is_saved", "lesson_resources", ["is_saved"])
 
 
 def downgrade():

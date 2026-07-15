@@ -222,3 +222,58 @@ class ModelSettingsUpdate(BaseModel):
     embedding_dimension: int = Field(ge=1, le=65536)
     vector_collection: str = Field(min_length=1, max_length=255)
     keep_alive: str = Field(default="-1", min_length=1, max_length=30)
+
+
+class KnowledgePointNode(BaseModel):
+    id: int
+    code: str
+    name: str
+    description: str | None = None
+    chapter_id: int | None = None
+    level: int = 1
+
+class KnowledgePointEdge(BaseModel):
+    from_id: int
+    to_id: int
+    relation_type: str = "prerequisite"
+    confidence: float = 0.85
+
+class KnowledgeGraphGenerateRequest(BaseModel):
+    course_id: int
+    document_ids: list[int] | None = None
+    chapter_id: int | None = None
+
+class KnowledgeGraphGenerateResponse(BaseModel):
+    task_id: str
+    status: str = "queued"
+
+class KnowledgeGraphDetail(BaseModel):
+    id: int
+    course_id: int
+    version: int
+    status: str
+    nodes: list[KnowledgePointNode]
+    edges: list[KnowledgePointEdge]
+    generated_by: int | None
+    reviewed_by: int | None
+    reviewed_at: str | None
+    created_at: str
+
+class KnowledgePointLinkRequest(BaseModel):
+    question_id: int
+    knowledge_point_ids: list[int] = Field(min_length=1)
+
+class KnowledgePointMastery(BaseModel):
+    knowledge_point_id: int
+    knowledge_point_name: str
+    total_questions: int
+    correct_count: int
+    accuracy_rate: float
+    level: str
+
+class StudentKnowledgeProfile(BaseModel):
+    student_id: int
+    course_id: int
+    knowledge_points: list[KnowledgePointMastery]
+    weak_areas: list[str]
+    recommended_path: list[str]

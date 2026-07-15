@@ -5,7 +5,8 @@ const props=defineProps<{label:string}>(),route=useRoute()
 const parts=computed<any[]>(()=>{
   if(route.params.resourceId){const values:any[]=[{label:'智能备课',to:{path:'/lesson'}}];if(route.query.from==='favorites')values.push({label:'收藏',to:{path:'/lesson/favorites'}});values.push({label:String(route.query.title||'备课文件预览')});return values}
   if(route.path==='/lesson/favorites')return[{label:'智能备课',to:{path:'/lesson'}},{label:'收藏'}]
-  const moduleBase=`/${String(route.path).split('/')[1]}`,values:any[]=[{label:props.label,to:route.params.courseId?{path:moduleBase}:undefined}]
+  const firstSegment=String(route.path).split('/')[1]
+  const moduleBase=firstSegment==='knowledge-graph'?'/courses':`/${firstSegment}`,values:any[]=[{label:props.label,to:route.params.courseId?{path:moduleBase}:undefined}]
   if(route.params.courseId)values.push({label:String(route.query.courseName||`课程 ${route.params.courseId}`),to:route.params.assignmentId?{path:route.path.replace(/\/assignment\/.*$/,''),query:{courseName:route.query.courseName}}:undefined})
   if(route.params.assignmentId)values.push({label:String(route.query.assignmentTitle||`作业 ${route.params.assignmentId}`)})
   return values

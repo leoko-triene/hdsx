@@ -1,5 +1,16 @@
 # 项目续接状态
 
+## 2026-07-15 知识点图谱前端路由与导航修复
+
+- 左侧导航新增教师/管理员可见的“知识点图谱”入口，指向 `/knowledge-graph` 课程选择页。
+- 新增 `/knowledge-graph` 路由作为课程入口，与作业中心、学情分析等模块保持一致。
+- 修复 `/knowledge-graph/course/:courseId` 页面顶部“返回课程列表”指向不存在的 `/knowledge-graph` 的问题，现在返回 `/courses`。
+- 修复面包屑在知识点图谱课程页生成 `/knowledge-graph` 无效链接的问题，同样回退到 `/courses`。
+- `CourseModuleEntryView` 增加 `base` 缺失时的兜底逻辑，避免生成 `/course/:courseId` 这类无效相对路径。
+- 修复 `KnowledgeGraphStudent.vue` 中 `auth.user` 可能为 `null` 导致的 TypeScript 构建错误。
+- 清理 Vite 缓存（`node_modules/.vite`、`node_modules/.vite-temp`）并重新验证生产构建，确认 `AssignmentView.vue` 模板可正确访问 `courseId`。
+- 验证：前端 TypeScript 检查通过，Vite 生产构建 745 模块通过，Vitest 2 项测试通过。
+
 ## 2026-07-14 课程路由、检索筛选与课程学情更新
 
 - Vue `KeepAlive` 改为按完整路由分别缓存，同一组件的不同课程不再复用首次课程状态；作业列表实例不会在进入详情前被改成详情状态，面包屑返回恢复正常。

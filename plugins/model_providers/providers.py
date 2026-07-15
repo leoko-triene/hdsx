@@ -112,10 +112,13 @@ class OpenAICompatibleLLMProvider(LLMProvider):
                 f"{system}\n\n你必须只输出满足以下 JSON Schema 的 JSON 对象，不要输出 Markdown 代码块或额外说明：\n"
                 f"{json.dumps(json_mode, ensure_ascii=False)}"
             )
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": user})
         payload: dict = {
             "model": self.config.llm_model,
-            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "temperature": 0.2,
+            "messages": messages,
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}

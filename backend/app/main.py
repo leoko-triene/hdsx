@@ -13,6 +13,7 @@ from app.api.router import router
 from app.api.capabilities import router as capabilities_router
 from app.api.web_imports import router as web_imports_router
 from app.api.model_settings import router as model_settings_router
+from app.api.knowledge_graph import router as knowledge_graph_router
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.db.session import engine
@@ -78,6 +79,7 @@ app.include_router(router, prefix=settings.api_prefix)
 app.include_router(capabilities_router, prefix=settings.api_prefix)
 app.include_router(web_imports_router, prefix=settings.api_prefix)
 app.include_router(model_settings_router, prefix=settings.api_prefix)
+app.include_router(knowledge_graph_router, prefix=settings.api_prefix)
 
 
 class SPAStaticFiles(StaticFiles):

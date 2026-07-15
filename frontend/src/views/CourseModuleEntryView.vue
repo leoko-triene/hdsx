@@ -4,7 +4,7 @@ import{useRoute}from'vue-router'
 import{api}from'../api/client'
 import{useAuthStore}from'../stores/auth'
 const route=useRoute(),auth=useAuthStore(),courses=ref<any[]>([]),error=ref('')
-const title=computed(()=>String(route.meta.title||'课程功能')),description=computed(()=>String(route.meta.description||'先选择课程，再进入功能页面。')),base=computed(()=>String(route.meta.base||''))
+const title=computed(()=>String(route.meta.title||'课程功能')),description=computed(()=>String(route.meta.description||'先选择课程，再进入功能页面。')),base=computed(()=>String(route.meta.base||`/${String(route.path).split('/')[1]}`))
 async function load(){courses.value=(await api.get(auth.user?.role==='student'?'/courses':'/courses/managed')).data}
 onActivated(()=>load().catch((e:any)=>error.value=e.message))
 </script>

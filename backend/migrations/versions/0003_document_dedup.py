@@ -9,8 +9,13 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("documents", sa.Column("dedup_key", sa.String(64), nullable=True))
-    op.create_unique_constraint("uq_documents_course_id_dedup_key", "documents", ["course_id", "dedup_key"])
+    inspector = sa.inspect(op.get_bind())
+    columns = {column["name"] for column in inspector.get_columns("documents")}
+    if "dedup_key" not in columns:
+        op.add_column("documents", sa.Column("dedup_key", sa.String(64), nullable=True))
+    constraints = inspector.get_unique_constraints("documents")
+    if not any(item["name"] == "uq_documents_course_id_dedup_key" for item in constraints):
+        op.create_unique_constraint("uq_documents_course_id_dedup_key", "documents", ["course_id", "dedup_key"])
 
 
 def downgrade():
