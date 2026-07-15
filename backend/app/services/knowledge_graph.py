@@ -35,9 +35,11 @@ class KnowledgeGraphService:
 
     def _assert_student_access(self, student_id: int, course_id: int, user) -> None:
         """Validate that *user* may view *student_id*'s data for *course_id*."""
-        if user.role == "student" and user.id != student_id:
-            raise PermissionDeniedError("无权查看他人数据")
-        if user.role == "parent":
+        if user.role == "student":
+            if user.id != student_id:
+                raise PermissionDeniedError("无权查看他人数据")
+            self._visible_course(course_id, user)
+        elif user.role == "parent":
             from app.modules.models import ParentStudentLink
             linked = self.db.scalar(
                 select(ParentStudentLink.id).where(
@@ -160,6 +162,7 @@ class KnowledgeGraphService:
                 ],
                 edges_json=[
                     {
+                        "id": None,
                         "from": code_to_id[rel["from_code"]],
                         "to": code_to_id[rel["to_code"]],
                         "type": rel.get("relation_type", "prerequisite"),
@@ -173,6 +176,9 @@ class KnowledgeGraphService:
                 generated_by=user.id,
             )
             self.db.add(graph)
+            self.db.commit()
+            self.db.refresh(graph)
+            self._sync_latest_graph(course_id)
             self.db.commit()
             self.db.refresh(graph)
             return graph
@@ -243,6 +249,207 @@ class KnowledgeGraphService:
                     document_ids_json=document_ids,
                 )
             )
+
+    def _sync_latest_graph(self, course_id: int) -> None:
+        """Rebuild nodes_json/edges_json of the latest graph snapshot."""
+        graph = self.db.scalar(
+            select(KnowledgePointGraph)
+            .where(KnowledgePointGraph.course_id == course_id)
+            .order_by(KnowledgePointGraph.version.desc())
+        )
+        if not graph:
+            return
+
+        points = self.db.scalars(
+            select(KnowledgePoint).where(KnowledgePoint.course_id == course_id)
+        ).all()
+        relations = self.db.execute(
+            select(KnowledgePointRelation).where(
+                KnowledgePointRelation.course_id == course_id
+            )
+        ).scalars().all()
+
+        graph.nodes_json = [
+            {
+                "id": p.id,
+                "code": p.code,
+                "name": p.name,
+                "description": p.description,
+                "chapter_id": p.chapter_id,
+                "level": 1,
+            }
+            for p in points
+        ]
+        graph.edges_json = [
+            {
+                "id": r.id,
+                "from": r.from_kp_id,
+                "to": r.to_kp_id,
+                "type": r.relation_type,
+                "confidence": r.confidence,
+            }
+            for r in relations
+        ]
+        self.db.flush()
+
+    def _latest_graph_or_create(self, course_id: int, user) -> KnowledgePointGraph:
+        graph = self.db.scalar(
+            select(KnowledgePointGraph)
+            .where(KnowledgePointGraph.course_id == course_id)
+            .order_by(KnowledgePointGraph.version.desc())
+        )
+        if graph:
+            return graph
+        graph = KnowledgePointGraph(
+            course_id=course_id,
+            version=1,
+            status="draft",
+            nodes_json=[],
+            edges_json=[],
+            generated_by=user.id,
+        )
+        self.db.add(graph)
+        self.db.flush()
+        return graph
+
+    def create_point(self, user, course_id: int, data: dict) -> KnowledgePoint:
+        self._owned_course(course_id, user)
+        existing = self.db.scalar(
+            select(KnowledgePoint.id).where(
+                KnowledgePoint.course_id == course_id,
+                KnowledgePoint.code == data["code"],
+            )
+        )
+        if existing:
+            raise AppError("DUPLICATE_KNOWLEDGE_POINT", "知识点编码已存在", 409)
+        point = KnowledgePoint(
+            course_id=course_id,
+            code=data["code"],
+            name=data["name"],
+            description=data.get("description"),
+            chapter_id=data.get("chapter_id"),
+        )
+        self.db.add(point)
+        self.db.flush()
+        self._latest_graph_or_create(course_id, user)
+        self._sync_latest_graph(course_id)
+        self.db.commit()
+        self.db.refresh(point)
+        return point
+
+    def update_point(self, user, point_id: int, data: dict) -> KnowledgePoint:
+        point = self.db.get(KnowledgePoint, point_id)
+        if not point:
+            raise NotFoundError("知识点")
+        self._owned_course(point.course_id, user)
+        if data.get("code") and data["code"] != point.code:
+            duplicate = self.db.scalar(
+                select(KnowledgePoint.id).where(
+                    KnowledgePoint.course_id == point.course_id,
+                    KnowledgePoint.code == data["code"],
+                    KnowledgePoint.id != point_id,
+                )
+            )
+            if duplicate:
+                raise AppError("DUPLICATE_KNOWLEDGE_POINT", "知识点编码已存在", 409)
+            point.code = data["code"]
+        if data.get("name") is not None:
+            point.name = data["name"]
+        if data.get("description") is not None:
+            point.description = data["description"]
+        if data.get("chapter_id") is not None:
+            point.chapter_id = data["chapter_id"]
+        self.db.flush()
+        self._sync_latest_graph(point.course_id)
+        self.db.commit()
+        self.db.refresh(point)
+        return point
+
+    def delete_point(self, user, point_id: int) -> None:
+        point = self.db.get(KnowledgePoint, point_id)
+        if not point:
+            raise NotFoundError("知识点")
+        self._owned_course(point.course_id, user)
+        self.db.execute(
+            delete(KnowledgePointRelation).where(
+                (KnowledgePointRelation.from_kp_id == point_id)
+                | (KnowledgePointRelation.to_kp_id == point_id)
+            )
+        )
+        course_id = point.course_id
+        self.db.delete(point)
+        self.db.flush()
+        self._sync_latest_graph(course_id)
+        self.db.commit()
+
+    def create_relation(
+        self, user, course_id: int, data: dict
+    ) -> KnowledgePointRelation:
+        self._owned_course(course_id, user)
+        from_id = data["from_id"]
+        to_id = data["to_id"]
+        if from_id == to_id:
+            raise AppError("INVALID_RELATION", "知识点关系不能自环", 422)
+        from_point = self.db.get(KnowledgePoint, from_id)
+        to_point = self.db.get(KnowledgePoint, to_id)
+        if not from_point or not to_point:
+            raise NotFoundError("知识点")
+        if from_point.course_id != course_id or to_point.course_id != course_id:
+            raise PermissionDeniedError("知识点不属于该课程")
+        relation_type = data.get("relation_type", "prerequisite")
+        duplicate = self.db.scalar(
+            select(KnowledgePointRelation.id).where(
+                KnowledgePointRelation.course_id == course_id,
+                KnowledgePointRelation.from_kp_id == from_id,
+                KnowledgePointRelation.to_kp_id == to_id,
+                KnowledgePointRelation.relation_type == relation_type,
+            )
+        )
+        if duplicate:
+            raise AppError("DUPLICATE_RELATION", "已存在相同类型关系", 409)
+        relation = KnowledgePointRelation(
+            course_id=course_id,
+            from_kp_id=from_id,
+            to_kp_id=to_id,
+            relation_type=relation_type,
+            confidence=data.get("confidence", 0.85),
+            source="manual",
+        )
+        self.db.add(relation)
+        self.db.flush()
+        self._latest_graph_or_create(course_id, user)
+        self._sync_latest_graph(course_id)
+        self.db.commit()
+        self.db.refresh(relation)
+        return relation
+
+    def update_relation(
+        self, user, relation_id: int, data: dict
+    ) -> KnowledgePointRelation:
+        relation = self.db.get(KnowledgePointRelation, relation_id)
+        if not relation:
+            raise NotFoundError("知识点关系")
+        self._owned_course(relation.course_id, user)
+        if data.get("relation_type") is not None:
+            relation.relation_type = data["relation_type"]
+        if data.get("confidence") is not None:
+            relation.confidence = data["confidence"]
+        self.db.flush()
+        self._sync_latest_graph(relation.course_id)
+        self.db.commit()
+        self.db.refresh(relation)
+        return relation
+
+    def delete_relation(self, user, relation_id: int) -> None:
+        relation = self.db.get(KnowledgePointRelation, relation_id)
+        if not relation:
+            raise NotFoundError("知识点关系")
+        self._owned_course(relation.course_id, user)
+        course_id = relation.course_id
+        self.db.delete(relation)
+        self.db.flush()
+        self._sync_latest_graph(course_id)
+        self.db.commit()
 
     def get_graph(self, course_id: int) -> KnowledgePointGraph:
         graph = self.db.scalar(

@@ -93,6 +93,25 @@ class KnowledgePointCreate(BaseModel):
     chapter_id: int | None = None
 
 
+class KnowledgePointUpdate(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    description: str | None = None
+    chapter_id: int | None = None
+
+
+class KnowledgePointRelationCreate(BaseModel):
+    from_id: int
+    to_id: int
+    relation_type: str = Field(default="prerequisite", pattern="^(prerequisite|related|contains)$")
+    confidence: float = Field(default=0.85, ge=0.0, le=1.0)
+
+
+class KnowledgePointRelationUpdate(BaseModel):
+    relation_type: str | None = Field(default=None, pattern="^(prerequisite|related|contains)$")
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
 class JoinRequestCreate(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
