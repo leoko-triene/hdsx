@@ -21,6 +21,12 @@ class OllamaClient:
         except ProviderError as exc:
             raise provider_app_error(exc) from exc
 
+    async def chat_messages(self, messages: list[dict], json_mode: bool | dict = False) -> str:
+        try:
+            return await self.runtime.llm().chat_messages(messages, json_mode)
+        except ProviderError as exc:
+            raise provider_app_error(exc) from exc
+
     async def embed(self, texts: list[str]) -> list[list[float]]:
         try:
             vectors = await self.runtime.embedding().embed(texts)

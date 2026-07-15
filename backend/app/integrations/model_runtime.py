@@ -35,6 +35,7 @@ class ModelRuntimeManager:
         return ModelRuntimeConfig(
             llm_base_url=settings.ollama_base_url,
             llm_model=settings.ollama_llm_model,
+            llm_temperature=settings.llm_temperature,
             embedding_base_url=settings.ollama_base_url,
             embedding_model=settings.ollama_embedding_model,
             embedding_dimension=768,
@@ -64,6 +65,8 @@ class ModelRuntimeManager:
             raise AppError("MODEL_CONFIG_INVALID", "Embedding 维度必须在 1～65536 之间", 422)
         if not re.fullmatch(r"[A-Za-z0-9_]{1,255}", config.vector_collection):
             raise AppError("MODEL_CONFIG_INVALID", "Milvus collection 只能包含字母、数字和下划线", 422)
+        if config.llm_temperature is not None and not 0.0 <= config.llm_temperature <= 2.0:
+            raise AppError("MODEL_CONFIG_INVALID", "LLM temperature 必须在 0.0～2.0 之间", 422)
 
     def merged(self, values: dict, *, preserve_keys: bool = True) -> ModelRuntimeConfig:
         current = self.config()

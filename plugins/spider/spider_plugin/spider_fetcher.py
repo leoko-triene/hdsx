@@ -68,6 +68,7 @@ class TextCourseFetcher:
         "jianshu.com": ".show-content, article, .article, ._2rhmJa",
         "github.com": ".markdown-body, article, .readme, .Box-body",
         "segmentfault.com": ".article-content, article, .content",
+        "baike.baidu.com": ".main-content, .content-wrapper, .para, .lemma-content, .basicInfo-item",
     }
 
     MAX_RESPONSE_BYTES = 2_000_000
@@ -159,9 +160,8 @@ class TextCourseFetcher:
 
     def search(self, topic: str, max_results: int = 15) -> list[SearchResult]:
         """Search Bing first and fall back to DuckDuckGo's HTML endpoint."""
-        # 过长的多站点 OR 查询在部分 Bing 节点会返回空结果；使用自然
-        # 教程查询，并在结果阶段优先排列已知学习平台。
-        query = f"{topic} 教程"
+        # 直接使用用户的搜索词，不加额外后缀以免干扰搜索引擎对原始意图的理解
+        query = topic
 
         results, errors = [], []
         try:

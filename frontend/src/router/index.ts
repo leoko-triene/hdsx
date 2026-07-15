@@ -17,6 +17,8 @@ import NotificationsView from '../views/NotificationsView.vue'
 import AgentCapabilitiesView from '../views/AgentCapabilitiesView.vue'
 import CourseModuleEntryView from '../views/CourseModuleEntryView.vue'
 import ModelSettingsView from '../views/ModelSettingsView.vue'
+import KnowledgeGraphView from '../views/KnowledgeGraphView.vue'
+import KnowledgeGraphStudent from '../views/KnowledgeGraphStudent.vue'
 import {useAuthStore} from '../stores/auth'
 type Role='admin'|'teacher'|'student'|'parent'
 const router=createRouter({history:createWebHistory(),routes:[
@@ -40,6 +42,9 @@ const router=createRouter({history:createWebHistory(),routes:[
   {path:'/classroom-ops/course/:courseId',component:TeacherQAView,meta:{roles:['teacher','admin'],title:'课堂运营'}},
   {path:'/notifications',component:NotificationsView,meta:{roles:['teacher','admin','student','parent']}}
   ,{path:'/agent-capabilities',component:AgentCapabilitiesView,meta:{roles:['admin']}},{path:'/model-settings',component:ModelSettingsView,meta:{roles:['admin'],title:'模型服务'}}
+  ,{path:'/knowledge-graph',component:CourseModuleEntryView,meta:{roles:['teacher','admin'],title:'知识点图谱',base:'/knowledge-graph',description:'选择课程后查看该课程的知识点图谱。'}}
+  ,{path:'/knowledge-graph/course/:courseId',component:KnowledgeGraphView,meta:{roles:['teacher','admin'],title:'知识点图谱'}}
+  ,{path:'/knowledge-graph/mastery',component:KnowledgeGraphStudent,meta:{roles:['student'],title:'我的知识点掌握度'}}
 ]})
 router.beforeEach(async to=>{
   if(to.meta.public)return

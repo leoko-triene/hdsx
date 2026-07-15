@@ -26,6 +26,7 @@ class AssignmentMaterial(StrictModel):
     question_type: str = Field(pattern="^(single_choice|multiple_choice|true_false|short_answer|essay)$")
     stem: str = Field(min_length=1)
     standard_answer: str = Field(min_length=1)
+    explanation: str = Field(default="")
     options: list[dict[str, str]] | None = None
     max_score: float = Field(ge=1, le=20)
 

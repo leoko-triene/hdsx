@@ -68,7 +68,7 @@ print(article.title, article.length)
 ## 验证
 
 ```powershell
-conda activate llm_learn
+conda activate program-hd
 cd Code1
 python -m pytest backend/tests/test_web_crawler.py backend/tests/test_web_supplement.py -q
 ```

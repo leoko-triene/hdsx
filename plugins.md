@@ -161,7 +161,7 @@ def recognize_upload(path: str):
 至少完成：
 
 ```powershell
-conda activate llm_learn
+conda activate program-hd
 cd Code1
 python -m pytest -q
 

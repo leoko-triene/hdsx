@@ -2,8 +2,8 @@ from app.rag.types import RetrievedChunk
 
 
 def positive_evidence(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
-    """丢弃重排器明确判定为负相关的片段，未启用重排器时保留融合结果。"""
-    return [item for item in chunks if item.rerank_score is None or item.rerank_score > 0]
+    """保留所有片段，仅按重排分数排序；BGE 对长中文问句可能返回低分但不代表不相关。"""
+    return chunks
 
 
 def diverse_evidence(chunks: list[RetrievedChunk], per_document: int = 3) -> list[RetrievedChunk]:

@@ -7,7 +7,7 @@ from sqlalchemy import (
     JSON, BigInteger, Boolean, DateTime, DECIMAL, Enum, Float, ForeignKey,
     Index, Integer, String, Text, UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 
 from app.db.base import Base, TimestampMixin
@@ -214,6 +214,7 @@ class Question(Base, TimestampMixin):
     question_type: Mapped[str] = mapped_column(String(40))
     stem: Mapped[str] = mapped_column(Text)
     standard_answer: Mapped[str] = mapped_column(Text)
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     options_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     rubric_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     knowledge_point_ids_json: Mapped[list] = mapped_column(JSON, default=list)
@@ -345,3 +346,32 @@ class AuditLog(Base):
     before_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class KnowledgePointRelation(Base, TimestampMixin):
+    __tablename__ = "knowledge_point_relations"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), index=True)
+    from_kp_id: Mapped[int] = mapped_column(ForeignKey("knowledge_points.id"), index=True)
+    to_kp_id: Mapped[int] = mapped_column(ForeignKey("knowledge_points.id"), index=True)
+    relation_type: Mapped[str] = mapped_column(String(30), default="prerequisite")
+    confidence: Mapped[float] = mapped_column(Float, default=0.85)
+    source: Mapped[str] = mapped_column(String(50), default="ai")
+    document_ids_json: Mapped[list] = mapped_column(JSON, default=list)
+    __table_args__ = (
+        UniqueConstraint("from_kp_id", "to_kp_id", "relation_type"),
+        Index("idx_kp_rel_course", "course_id", "relation_type"),
+    )
+
+
+class KnowledgePointGraph(Base, TimestampMixin):
+    __tablename__ = "knowledge_point_graphs"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(30), default="draft")
+    nodes_json: Mapped[list] = mapped_column(JSON, default=list)
+    edges_json: Mapped[list] = mapped_column(JSON, default=list)
+    generated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

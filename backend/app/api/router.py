@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import csv
 import io
@@ -11,6 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, Response
+from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -546,13 +548,61 @@ def preview_document(
         parts.append(content)
     full_content = "\n\n".join(parts)
     suffix = Path(document.filename).suffix.lower()
+    source_path = Path(getattr(document, "source_path", "") or "")
+    storage_root = get_settings().storage_root.resolve()
+    source_available = False
+    if source_path:
+        try:
+            source_available = source_path.is_file() and storage_root in source_path.resolve().parents
+        except (OSError, RuntimeError):
+            source_available = False
+    if source_available and suffix in {".txt", ".md", ".markdown", ".docx"}:
+        try:
+            full_content = extract_text(document.filename, source_path.read_bytes())
+        except AppError:
+            pass  # 旧文件异常时仍可使用已入库的 UTF-8 知识块预览。
+    preview_format = "text"
+    if suffix in {".md", ".markdown"} or document.source_url:
+        preview_format = "markdown"
+    elif suffix == ".pdf" and source_available:
+        preview_format = "pdf"
+    elif suffix == ".docx":
+        preview_format = "word"
     return {
         "id": document.id, "filename": document.filename, "mime_type": document.mime_type,
         "category": document.category, "source_url": document.source_url,
-        "format": "markdown" if suffix in {".md", ".markdown"} or document.source_url else "text",
+        "format": preview_format,
         "content": full_content[:limit], "chunks": len(chunks),
         "truncated": len(full_content) > limit,
+        "content_url": f"{get_settings().api_prefix}/courses/{course_id}/documents/{document_id}/content"
+        if preview_format == "pdf" else None,
     }
+
+
+@router.get("/courses/{course_id}/documents/{document_id}/content", tags=["knowledge"])
+def document_content(
+    course_id: int, document_id: int, db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    """鉴权后以内联方式返回 PDF 原文件，供浏览器原生预览器使用。"""
+    visible_course(db, course_id, user)
+    document = db.get(Document, document_id)
+    if not document or document.course_id != course_id or document.status == Status.archived:
+        raise NotFoundError("知识库文档")
+    path = Path(document.source_path or "")
+    root = get_settings().storage_root.resolve()
+    try:
+        resolved = path.resolve()
+    except (OSError, RuntimeError) as exc:
+        raise NotFoundError("文档原文件") from exc
+    if not resolved.is_file() or root not in resolved.parents:
+        raise NotFoundError("文档原文件")
+    if resolved.suffix.lower() != ".pdf":
+        raise AppError("PREVIEW_CONTENT_UNSUPPORTED", "该文件使用文本预览，无需读取二进制原件", 415)
+    return FileResponse(
+        resolved, media_type="application/pdf", filename=document.filename,
+        content_disposition_type="inline",
+    )
 
 
 @router.delete("/courses/{course_id}/documents/{document_id}", status_code=204, tags=["knowledge"])
@@ -733,7 +783,10 @@ def get_assignment(assignment_id: int, db: Session = Depends(get_db), user: User
             "sort_order": question.sort_order, "material_type": question.material_type,
         }
         if user.role in {"teacher", "admin"}:
-            item.update({"standard_answer": question.standard_answer, "rubric": question.rubric_json, "knowledge_point_ids": question.knowledge_point_ids_json})
+            item.update({
+                "standard_answer": question.standard_answer, "explanation": question.explanation,
+                "rubric": question.rubric_json, "knowledge_point_ids": question.knowledge_point_ids_json,
+            })
         question_items.append(item)
     return {**assignment_summary(db, assignment, course, user), "questions": question_items}
 
@@ -761,15 +814,15 @@ async def generate_assignment_content(assignment_id: int, data: AssignmentMateri
     documents = list(db.scalars(select(Document).where(Document.id.in_(document_ids))))
     if len(documents) != len(document_ids) or any(document.course_id != assignment.course_id or document.status != Status.ready for document in documents):
         raise AppError("DOCUMENT_NOT_AVAILABLE", "所选文件必须全部属于该课程且已完成入库", 422)
-    chunks = list(db.scalars(select(DocumentChunk).where(DocumentChunk.document_id.in_(document_ids)).order_by(DocumentChunk.document_id, DocumentChunk.chunk_index)))
-    materials = await generate_assignment_materials(documents, chunks, data)
+    materials, material_warning = await generate_assignment_materials(db, assignment.course_id, document_ids, documents, data)
     start_order = db.scalar(select(func.max(Question.sort_order)).where(Question.assignment_id == assignment.id)) or 0
     created = []
     for index, material in enumerate(materials, start=1):
         question = Question(
             assignment_id=assignment.id, question_type=material["question_type"],
             stem=material["stem"], standard_answer=material["standard_answer"],
-            options_json=material.get("options"), rubric_json=None, knowledge_point_ids_json=[],
+            explanation=material.get("explanation"), options_json=material.get("options"),
+            rubric_json=None, knowledge_point_ids_json=[],
             material_type=material["material_type"], max_score=Decimal(str(material["max_score"])),
             sort_order=start_order + index,
         )
@@ -777,7 +830,13 @@ async def generate_assignment_content(assignment_id: int, data: AssignmentMateri
         db.add(question); db.flush()
         created.append({"id": question.id, **material})
     db.commit()
-    return {"assignment_id": assignment.id, "document_ids": document_ids, "document_names": [document.filename for document in documents], "created": len(created), "items": created}
+    response_data = {"assignment_id": assignment.id, "document_ids": document_ids,
+            "document_names": [document.filename for document in documents],
+            "created": len(created), "question_type_counts": dict(Counter(item["question_type"] for item in created)),
+            "items": created}
+    if material_warning:
+        response_data["warning"] = material_warning
+    return response_data
 
 
 @router.get("/assignments/{assignment_id}/submissions", tags=["grading"])
@@ -823,6 +882,7 @@ def get_submission(submission_id: int, db: Session = Depends(get_db), user: User
             "feedback": result.feedback, "evidence": result.evidence_json, "status": result.status,
             "question": questions[result.question_id].stem, "question_type": questions[result.question_id].question_type,
             "standard_answer": questions[result.question_id].standard_answer,
+            "explanation": questions[result.question_id].explanation,
         } for result in results],
     }
 
@@ -842,13 +902,13 @@ async def add_question(assignment_id: int, data: QuestionCreate, db: Session = D
     standard_answer = data.standard_answer.strip() or await generate_standard_answer(db, assignment.course_id, data.question_type, data.stem, options)
     question = Question(
         assignment_id=assignment_id, question_type=data.question_type, stem=data.stem,
-        standard_answer=standard_answer, options_json=options,
+        standard_answer=standard_answer, explanation=data.explanation, options_json=options,
         rubric_json=data.rubric, knowledge_point_ids_json=data.knowledge_point_ids,
         max_score=data.max_score, sort_order=data.sort_order,
     )
     assignment.total_score = Decimal(assignment.total_score) + data.max_score
     db.add(question); db.commit(); db.refresh(question)
-    return {"id": question.id, "max_score": question.max_score, "standard_answer": question.standard_answer}
+    return {"id": question.id, "max_score": question.max_score, "standard_answer": question.standard_answer, "explanation": question.explanation}
 
 
 @router.patch("/questions/{question_id}", tags=["assignment"])
@@ -864,12 +924,13 @@ async def update_question(question_id: int, data: QuestionCreate, db: Session = 
     standard_answer = data.standard_answer.strip() or await generate_standard_answer(db, assignment.course_id, data.question_type, data.stem, options)
     old_score = Decimal(question.max_score)
     question.question_type = data.question_type; question.stem = data.stem
-    question.standard_answer = standard_answer; question.options_json = options
-    question.rubric_json = data.rubric; question.knowledge_point_ids_json = data.knowledge_point_ids
+    question.standard_answer = standard_answer; question.explanation = data.explanation
+    question.options_json = options; question.rubric_json = data.rubric
+    question.knowledge_point_ids_json = data.knowledge_point_ids
     question.max_score = data.max_score; question.sort_order = data.sort_order
     assignment.total_score = Decimal(assignment.total_score) - old_score + data.max_score
     db.commit(); db.refresh(question)
-    return {"id": question.id, "max_score": question.max_score, "standard_answer": question.standard_answer}
+    return {"id": question.id, "max_score": question.max_score, "standard_answer": question.standard_answer, "explanation": question.explanation}
 
 
 @router.post("/assignments/{assignment_id}/publish", tags=["assignment"])
@@ -895,27 +956,61 @@ async def _grade_submission(db: Session, submission: Submission, assignment: Ass
     answer_map = {int(x["question_id"]): x.get("answer", "") for x in submission.answers_json}
     chunks = KnowledgeService(db).course_context(assignment.course_id, 8)
     knowledge_context = "\n\n".join(chunk.content for chunk in chunks)
-    output, total = [], Decimal("0")
+
+    # Separate objective (instant) and subjective (AI) questions
+    objective_items = []
+    subjective_items = []
     for question in questions:
         raw_answer = answer_map.get(question.id, "")
-        answer = ",".join(str(value) for value in raw_answer) if isinstance(raw_answer, list) else str(raw_answer)
+        answer_val = ",".join(str(v) for v in raw_answer) if isinstance(raw_answer, list) else str(raw_answer)
         if question.question_type in {"single_choice", "multiple_choice", "true_false"}:
             correct = _answer_tokens(raw_answer) == _answer_tokens(question.standard_answer)
-            result = {"score": float(question.max_score if correct else 0), "confidence": 1.0, "feedback": "回答正确" if correct else "回答错误", "evidence": []}
-            rule_score = Decimal(str(result["score"])); ai_score = None
+            fb = "✅ 你答对了，真棒，再接再厉哦！" if correct else "❌ 你答错了，快去复习一下吧！"
+            objective_items.append({
+                "question": question, "score": float(question.max_score if correct else 0),
+                "confidence": 1.0, "feedback": fb, "evidence": [],
+                "rule_score": Decimal(str(float(question.max_score if correct else 0))),
+                "ai_score": None,
+            })
         else:
-            result = await grade_subjective(question, answer, knowledge_context)
-            rule_score = None; ai_score = Decimal(str(result["score"]))
-        score = rule_score if rule_score is not None else ai_score
+            subjective_items.append({"question": question, "answer": answer_val})
+
+    # Run all subjective AI grading calls in parallel
+    if subjective_items:
+        ai_results = await asyncio.gather(*[
+            grade_subjective(item["question"], item["answer"], knowledge_context)
+            for item in subjective_items
+        ], return_exceptions=True)
+        for item, ai_result in zip(subjective_items, ai_results):
+            if isinstance(ai_result, Exception):
+                item["score"] = 0; item["confidence"] = 0
+                item["feedback"] = "AI 批改异常，请等待教师复核。"
+                item["evidence"] = []; item["rule_score"] = None; item["ai_score"] = Decimal("0")
+            else:
+                item["score"] = ai_result["score"]
+                item["confidence"] = ai_result["confidence"]
+                item["feedback"] = ai_result["feedback"]
+                item["evidence"] = ai_result.get("evidence", [])
+                item["rule_score"] = None; item["ai_score"] = Decimal(str(ai_result["score"]))
+
+    # Combine and save all results
+    all_items = objective_items + subjective_items
+    output, total = [], Decimal("0")
+    for item in all_items:
+        question = item["question"]
+        score = item["rule_score"] if item["rule_score"] is not None else item["ai_score"]
         total += score or Decimal("0")
         grading = GradingResult(
-            submission_id=submission.id, question_id=question.id, rule_score=rule_score,
-            ai_score=ai_score, confidence=result["confidence"], feedback=result["feedback"],
-            evidence_json=result.get("evidence", []), status=Status.pending_review,
+            submission_id=submission.id, question_id=question.id,
+            rule_score=item["rule_score"], ai_score=item["ai_score"],
+            confidence=item["confidence"], feedback=item["feedback"],
+            evidence_json=item.get("evidence", []), status=Status.pending_review,
         )
         db.add(grading); db.flush()
         output.append({"grading_result_id": grading.id, "question_id": question.id,
-                       "standard_answer": question.standard_answer, **result})
+                       "standard_answer": question.standard_answer,
+                       "score": item["score"], "confidence": item["confidence"],
+                       "feedback": item["feedback"], "evidence": item.get("evidence", [])})
     submission.total_score = total; submission.status = Status.pending_review
     db.commit()
     return {"submission_id": submission.id, "suggested_total": total, "results": output, "requires_review": True}
@@ -1005,7 +1100,9 @@ def list_qa_messages(session_id: int, db: Session = Depends(get_db), user: User 
     if not session or session.user_id != user.id:
         raise NotFoundError("问答会话")
     items = list(db.scalars(select(QAMessage).where(QAMessage.session_id == session_id).order_by(QAMessage.id)))
+    LEVEL_REVERSE = {0.85: "高", 0.65: "较高", 0.5: "中", 0.0: "中"}
     return [{"id": item.id, "role": item.role, "content": item.content, "citations": item.citations_json,
+             "confidence_level": LEVEL_REVERSE.get(item.confidence, "中"),
              "confidence": item.confidence, "insufficient": item.needs_teacher, "corrected_at": item.corrected_at,
              "correction_note": item.correction_note, "created_at": item.created_at} for item in items]
 
@@ -1015,17 +1112,21 @@ async def ask(session_id: int, data: QAMessageCreate, db: Session = Depends(get_
     session = db.get(QASession, session_id)
     if not session or (session.user_id != user.id and user.role != "admin"): raise NotFoundError("问答会话")
     user_msg = QAMessage(session_id=session_id, role="user", content=data.content, trace_id=uuid.uuid4().hex)
-    db.add(user_msg)
-    answer = await KnowledgeService(db).answer(session.course_id, data.content)
+    db.add(user_msg); db.flush()
+    history_msgs = list(db.scalars(select(QAMessage).where(QAMessage.session_id == session_id).order_by(QAMessage.id)))
+    history = [{"role": m.role, "content": m.content} for m in history_msgs[:-1]]
+    answer = await KnowledgeService(db).answer(session.course_id, data.content, history=history, mode=data.mode)
+    LEVEL_MAP = {"高": 0.85, "较高": 0.65, "中": 0.50}
     assistant_msg = QAMessage(
         session_id=session_id, role="assistant", content=answer.answer,
-        citations_json=answer.citations, confidence=answer.confidence,
+        citations_json=answer.citations, confidence=LEVEL_MAP.get(answer.confidence_level, 0.5),
         needs_teacher=answer.insufficient_evidence, trace_id=answer.trace_id,
     )
     db.add(assistant_msg); db.commit(); db.refresh(assistant_msg)
     return {
         "id": assistant_msg.id, "answer": answer.answer, "citations": answer.citations,
-        "confidence": answer.confidence, "insufficient_evidence": answer.insufficient_evidence,
+        "confidence_level": answer.confidence_level, "confidence": LEVEL_MAP.get(answer.confidence_level, 0.5),
+        "insufficient_evidence": answer.insufficient_evidence, "fallback": answer.fallback,
         "trace_id": answer.trace_id,
     }
 

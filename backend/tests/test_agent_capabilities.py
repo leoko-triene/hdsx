@@ -9,6 +9,8 @@ from app.prompts.registry import get_prompt_registry
 from app.skills.registry import get_skill_registry
 from app.tools.contracts import ToolContext
 from app.tools.registry import get_tool_registry
+from app.agents.validation import validate_agent_contracts
+from app.agents.tutor import TutorAgent
 
 
 class FakeOllama:
@@ -25,6 +27,25 @@ def test_prompt_and_skill_versions_are_resolvable():
         assert prompt.version == skill.prompt_version
     assert len(skills.list()) >= 6
     assert len(prompts.list()) >= 6
+
+
+def test_every_domain_agent_pins_a_resolvable_skill_and_prompt():
+    result = validate_agent_contracts()
+    assert result["ok"] is True
+    assert len(result["contracts"]) == 6
+    tutor = next(item for item in result["contracts"] if item["agent"] == "TutorAgent")
+    assert tutor["skill"] == "grounded_qa@1.1.0"
+    assert tutor["prompt"] == "grounded_qa@1.1.0"
+
+
+def test_tutor_agent_uses_registered_grounded_qa_version():
+    result = asyncio.run(TutorAgent(AgentRuntime(FakeOllama())).run(
+        {"query": "什么是回归？", "context": "[资料1] 回归用于预测连续值。"},
+        tools_used=["search_course_knowledge"],
+    ))
+    assert result.content == "生成结果"
+    assert result.meta.capability == "grounded_qa"
+    assert result.meta.version == "1.1.0"
 
 
 def test_tool_registry_is_an_explicit_allowlist_with_confirmation_boundary():

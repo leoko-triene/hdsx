@@ -23,6 +23,10 @@ class OllamaLLMProvider(LLMProvider):
         value = self.config.keep_alive.strip()
         return int(value) if value.lstrip("-").isdigit() else value
 
+    @property
+    def temperature(self) -> float:
+        return self.config.llm_temperature if self.config.llm_temperature is not None else 0.2
+
     async def chat(self, system: str, user: str, json_mode: bool | dict = False) -> str:
         if isinstance(json_mode, dict):
             system = (
@@ -32,7 +36,25 @@ class OllamaLLMProvider(LLMProvider):
         payload: dict = {
             "model": self.config.llm_model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "stream": False, "keep_alive": self.keep_alive, "options": {"temperature": 0.2},
+            "stream": False, "keep_alive": self.keep_alive, "options": {"temperature": self.temperature},
+        }
+        if json_mode:
+            payload["format"] = json_mode if isinstance(json_mode, dict) else "json"
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                response = await client.post(f"{_base(self.config.llm_base_url)}/api/chat", json=payload)
+                response.raise_for_status()
+                content = response.json()["message"]["content"]
+                if not isinstance(content, str):
+                    raise KeyError("message.content")
+                return content
+        except (httpx.HTTPError, KeyError, TypeError) as exc:
+            raise ProviderError(f"Ollama LLM 调用失败：{exc}") from exc
+
+    async def chat_messages(self, messages: list[dict], json_mode: bool | dict = False) -> str:
+        payload: dict = {
+            "model": self.config.llm_model, "messages": messages,
+            "stream": False, "keep_alive": self.keep_alive, "options": {"temperature": self.temperature},
         }
         if json_mode:
             payload["format"] = json_mode if isinstance(json_mode, dict) else "json"
@@ -115,8 +137,9 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         payload: dict = {
             "model": self.config.llm_model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "temperature": 0.2,
         }
+        if self.config.llm_temperature is not None:
+            payload["temperature"] = self.config.llm_temperature
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
         try:

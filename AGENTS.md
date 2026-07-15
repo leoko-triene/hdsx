@@ -1,7 +1,7 @@
 # Agent 开发约束
 
 1. 修改前阅读根目录 `../44.md`、本文件、相关模块和测试。
-2. Python 命令统一在 `llm_learn` 环境运行。
+2. Python 命令统一在 `program-hd` 环境运行。
 3. 业务数据库只能使用 MySQL；Milvus 仅保存向量。
 4. 依赖方向固定为 API -> Service -> Repository -> ORM。
 5. 新表或字段必须带 Alembic 迁移；禁止以 `create_all` 代替正式迁移。

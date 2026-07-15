@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_llm_model: str = "qwen2.5:latest"
     ollama_embedding_model: str = "embeddinggemma:latest"
+    llm_temperature: float | None = None
     model_warmup_enabled: bool = True
     model_warmup_strict: bool = True
     ollama_keep_alive: str = "-1"

@@ -1,5 +1,17 @@
 # 项目续接状态
 
+## 2026-07-15 知识点图谱合并
+
+- 从 `code/hdsx` 的 `7e0532f` 提交选择性移植“知识点图谱”功能，保留 Code1 已有的 `Question.explanation`、题型计数、`MasterySnapshot` 掌握度和版本化 Agent Runtime。
+- 新增 `knowledge_point_relations`、`knowledge_point_graphs` 两张表，Alembic 升级到 `0011_knowledge_graph`（基于 `0010_question_explanation`）。
+- 新增 `KnowledgeGraphAgent` 及 `knowledge_graph_extraction@1.0.0` Skill / Prompt，真正接入 Agent Runtime。
+- 教师/管理员可从“知识点图谱”按课程生成、查看、审核知识图谱；ECharts 力导向图渲染知识点与前置/相关/包含关系。
+- 题目编辑新增 `KnowledgePointSelector`，支持把题目关联到课程知识点。
+- 学生可在“我的知识点掌握度”按课程查看掌握度、薄弱项和推荐学习路径；数据复用现有 `MasterySnapshot`，避免多次提交重复计数。
+- 知识图谱 API 使用 Code1 现有 `owned_course` / `visible_course` 校验，未加入课程、非负责人、未绑定家长均无法访问。
+- 重新生成时版本号递增；模型返回空知识点时回滚事务并返回明确错误，不会创建空图谱。
+- 验证：后端 42 项测试通过（新增 4 项知识图谱单测），Agent 契约校验通过，ruff 无告警，前端生产构建通过（含 echarts 动态加载）。
+
 ## 2026-07-14 课程路由、检索筛选与课程学情更新
 
 - Vue `KeepAlive` 改为按完整路由分别缓存，同一组件的不同课程不再复用首次课程状态；作业列表实例不会在进入详情前被改成详情状态，面包屑返回恢复正常。
@@ -9,7 +21,7 @@
 - RAG 结果增加正相关、最短内容及单文档数量限制；未配置 BGE 时保留融合分数筛选结果，而不是把全部候选误判为零分。
 - 学生课程学情新增全部已发布作业完成/未完成、逾期、最新得分率、课堂提问和需教师关注回答的综合分析；知识点掌握度按课程隔离。
 - 本轮不修改 MySQL 表结构，迁移版本仍为 `0009_submission_attempts`。
-- 验证：`llm_learn` 后端 36 项测试通过，前端 Markdown 2 项测试通过，Vite 生产构建 140 模块通过；Vue TypeScript 独立检查的扩展权限审核连续超时，尚未取得结果。
+- 验证：`program-hd` 后端 36 项测试通过，前端 Markdown 2 项测试通过，Vite 生产构建 140 模块通过；Vue TypeScript 独立检查的扩展权限审核连续超时，尚未取得结果。
 
 ## 2026-07-14 知识库文档预览与管理员模型 Provider 更新
 
@@ -80,7 +92,7 @@
 启动环境修复：2026-07-13
 
 - Uvicorn reload 已限制为 `backend`，不会再扫描 `frontend/node_modules`。
-- 新增 `start_backend.ps1`，自动选择 `llm_learn` Python 并使用 `python -m uvicorn`。
+- 新增 `start_backend.ps1`，自动选择 `program-hd` Python 并使用 `python -m uvicorn`。
 - Windows Installer 策略阻止系统 Node 修复，因此已配置项目便携 Node.js 24.18.0。
 - 项目便携 npm 版本 11.16.0、pnpm 版本 11.7.0。
 - 新增 `start_frontend.ps1` 和 `bin/node.cmd`、`bin/npm.cmd`、`bin/pnpm.cmd`。
@@ -119,8 +131,8 @@
 ## 已完成
 
 - 已读取并遵循仓库根目录 `11.md` 与 `44.md`。
-- 已确认 Python 环境固定使用 Conda `llm_learn`（Python 3.11.15）。
-- 已在 `llm_learn` 安装：Alembic、PyMySQL、pytest。
+- 已确认 Python 环境固定使用 Conda `program-hd`（Python 3.11.15）。
+- 已在 `program-hd` 安装：Alembic、PyMySQL、pytest。
 - 已确认 Ollama 可访问：
   - `qwen2.5:latest`
   - `embeddinggemma:latest`，向量维度 768
@@ -157,7 +169,7 @@
 2. 执行：
 
 ```powershell
-conda activate llm_learn
+conda activate program-hd
 cd D:\class\Season4_5\hdsx-d\Code1
 python scripts\check_environment.py
 ```

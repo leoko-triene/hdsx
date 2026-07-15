@@ -22,17 +22,29 @@ class WebSupplementService:
     async def collect(self, query: str, max_articles: int = 2) -> WebKnowledgeSupplement:
         max_articles = max(1, min(2, max_articles))
         try:
-            results = await self.crawler_factory().search(query, max(max_articles * 2, 4))
-        except Exception:
+            return await asyncio.wait_for(self._collect(query, max_articles), timeout=10)
+        except (asyncio.TimeoutError, Exception):
+            return WebKnowledgeSupplement()
+
+    async def _collect(self, query: str, max_articles: int) -> WebKnowledgeSupplement:
+        try:
+            results = await asyncio.wait_for(self.crawler_factory().search(query, 10), timeout=5)
+        except (asyncio.TimeoutError, Exception):
             return WebKnowledgeSupplement()
 
         async def fetch(item: dict):
             try:
-                return item, await self.crawler_factory().fetch(item["url"])
-            except Exception:
+                article = await asyncio.wait_for(self.crawler_factory().fetch(item["url"]), timeout=5)
+                if len(article.text) < 100:
+                    return None
+                keywords = [k for k in query.split() if len(k) >= 2]
+                if keywords and not any(k in article.text[:500] for k in keywords):
+                    return None
+                return item, article
+            except (asyncio.TimeoutError, Exception):
                 return None
 
-        fetched = await asyncio.gather(*(fetch(item) for item in results[: max_articles * 2]))
+        fetched = await asyncio.gather(*(fetch(item) for item in results))
         sections, citations = [], []
         for value in fetched:
             if not value or len(sections) >= max_articles:

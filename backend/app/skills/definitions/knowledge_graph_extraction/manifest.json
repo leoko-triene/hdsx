@@ -1,0 +1,48 @@
+{
+  "name": "knowledge_graph_extraction",
+  "version": "1.0.0",
+  "description": "从课程教材/文档中自动抽取结构化知识点并构建知识关系图谱",
+  "prompt": "knowledge_graph_extraction",
+  "prompt_version": "1.0.0",
+  "allowed_tools": [],
+  "input_schema": {
+    "required": ["course_id", "context"],
+    "properties": {
+      "course_id": {"type": "integer"},
+      "context": {"type": "string"}
+    }
+  },
+  "output_schema": {
+    "type": "object",
+    "required": ["knowledge_points", "relations"],
+    "properties": {
+      "knowledge_points": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["code", "name"],
+          "properties": {
+            "code": {"type": "string"},
+            "name": {"type": "string"},
+            "description": {"type": "string"},
+            "chapter_id": {"type": ["integer", "null"]},
+            "level": {"type": "integer"}
+          }
+        }
+      },
+      "relations": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["from_code", "to_code"],
+          "properties": {
+            "from_code": {"type": "string"},
+            "to_code": {"type": "string"},
+            "relation_type": {"type": "string"},
+            "confidence": {"type": "number"}
+          }
+        }
+      }
+    }
+  }
+}

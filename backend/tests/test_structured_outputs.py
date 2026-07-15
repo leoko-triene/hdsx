@@ -12,6 +12,12 @@ def test_contract_fallback_is_always_valid():
     assert value.model_dump() == {"score": 1.0, "confidence": .2, "feedback": "待教师复核", "evidence": []}
 
 
+def test_lesson_json_is_converted_to_readable_markdown():
+    output = agents._coerce_markdown_text('{"title":"第一章","content":["目标一","目标二"]}')
+    assert output == "- 目标一\n- 目标二"
+    assert not output.startswith("{")
+
+
 def test_grading_invalid_model_output_uses_deterministic_fallback(monkeypatch):
     async def fake_run(*args, **kwargs):
         return SimpleNamespace(content="score: 五分，格式坏了")
@@ -23,16 +29,23 @@ def test_grading_invalid_model_output_uses_deterministic_fallback(monkeypatch):
     assert result["feedback"]
 
 
-def test_assignment_invalid_model_output_returns_requested_valid_items(monkeypatch):
+def test_assignment_invalid_model_output_raises_error(monkeypatch):
     async def fake_run(*args, **kwargs):
         return SimpleNamespace(content="{broken")
     monkeypatch.setattr(agents.AssignmentAgent, "run", fake_run)
-    request = SimpleNamespace(chapter_or_topic="线性回归", example_count=1, exercise_count=2, thinking_count=1, extension_count=0)
+    from unittest.mock import AsyncMock, MagicMock
+    mock_ks = MagicMock()
+    mock_ks.hybrid_search = AsyncMock(return_value=[])
+    mock_ks.keyword_search = MagicMock(return_value=[])
+    monkeypatch.setattr("app.services.agents.KnowledgeService", lambda db: mock_ks)
+    request = SimpleNamespace(chapter_or_topic="线性回归", single_choice_count=1,
+                              multiple_choice_count=1, true_false_count=1,
+                              short_answer_count=1, essay_count=0)
     document = SimpleNamespace(id=1, filename="教材.md")
-    chunk = SimpleNamespace(document_id=1, content="线性回归通过最小化均方误差拟合参数。")
-    items = asyncio.run(agents.generate_assignment_materials([document], [chunk], request))
-    assert len(items) == 4
-    assert all(item["stem"] and item["standard_answer"] for item in items)
+    import pytest
+    from app.core.exceptions import AppError
+    with pytest.raises(AppError, match="AI 出题失败"):
+        asyncio.run(agents.generate_assignment_materials(MagicMock(), 1, [1], [document], request))
 
 
 def test_report_invalid_model_output_is_parent_friendly(monkeypatch):

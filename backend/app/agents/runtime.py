@@ -5,6 +5,7 @@ from app.common.tracing import TraceContext
 from app.integrations.ollama import OllamaClient
 from app.prompts.registry import get_prompt_registry
 from app.skills.registry import get_skill_registry
+from app.core.exceptions import AppError
 
 
 class AgentRuntime:
@@ -14,11 +15,14 @@ class AgentRuntime:
         self.client = client or OllamaClient()
 
     async def complete(
-        self, skill_name: str, values: dict[str, Any], *,
+        self, skill_name: str, values: dict[str, Any], *, skill_version: str = "1.0.0",
         output_schema: dict | None = None, tools_used: list[str] | None = None,
     ) -> AgentResult:
-        skill = get_skill_registry().get(skill_name)
-        prompt = get_prompt_registry().get(skill.prompt, skill.prompt_version)
+        try:
+            skill = get_skill_registry().get(skill_name, skill_version)
+            prompt = get_prompt_registry().get(skill.prompt, skill.prompt_version)
+        except KeyError as exc:
+            raise AppError("AGENT_CONTRACT_INVALID", str(exc), 503) from exc
         requested_tools = tools_used or []
         invalid = set(requested_tools) - set(skill.allowed_tools)
         if invalid:

@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ORMModel(BaseModel):
@@ -146,16 +146,28 @@ class AssignmentCreate(BaseModel):
 class AssignmentMaterialGenerate(BaseModel):
     document_ids: list[int] = Field(min_length=1, max_length=10)
     chapter_or_topic: str = Field(min_length=1, max_length=300)
-    example_count: int = Field(default=1, ge=0, le=5)
-    exercise_count: int = Field(default=3, ge=0, le=10)
-    thinking_count: int = Field(default=1, ge=0, le=5)
-    extension_count: int = Field(default=1, ge=0, le=5)
+    single_choice_count: int = Field(default=2, ge=0, le=10)
+    multiple_choice_count: int = Field(default=1, ge=0, le=10)
+    true_false_count: int = Field(default=1, ge=0, le=10)
+    short_answer_count: int = Field(default=2, ge=0, le=10)
+    essay_count: int = Field(default=1, ge=0, le=10)
+
+    @model_validator(mode="after")
+    def validate_total_count(self):
+        total = sum((self.single_choice_count, self.multiple_choice_count,
+                     self.true_false_count, self.short_answer_count, self.essay_count))
+        if total < 1:
+            raise ValueError("至少生成一道题")
+        if total > 10:
+            raise ValueError("单次最多生成 10 道题")
+        return self
 
 
 class QuestionCreate(BaseModel):
     question_type: str = Field(pattern="^(single_choice|multiple_choice|true_false|short_answer|essay)$")
     stem: str
     standard_answer: str = ""
+    explanation: str | None = None
     options: list[dict] | None = None
     rubric: list[dict] | None = None
     knowledge_point_ids: list[int] = Field(default_factory=list)
@@ -193,6 +205,7 @@ class QASessionUpdate(BaseModel):
 
 class QAMessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
+    mode: str = Field(default="auto", pattern="^(auto|direct)$")
 
 
 class QAAnswerCorrection(BaseModel):
@@ -213,6 +226,7 @@ class ModelSettingsUpdate(BaseModel):
     llm_base_url: str = Field(min_length=8, max_length=2000)
     llm_model: str = Field(min_length=1, max_length=255)
     llm_api_key: str | None = Field(default=None, max_length=4000)
+    llm_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     clear_llm_api_key: bool = False
     embedding_provider: str = Field(pattern="^(ollama|openai_compatible)$")
     embedding_base_url: str = Field(min_length=8, max_length=2000)
@@ -222,3 +236,65 @@ class ModelSettingsUpdate(BaseModel):
     embedding_dimension: int = Field(ge=1, le=65536)
     vector_collection: str = Field(min_length=1, max_length=255)
     keep_alive: str = Field(default="-1", min_length=1, max_length=30)
+
+
+class KnowledgePointNode(BaseModel):
+    id: int
+    code: str
+    name: str
+    description: str | None = None
+    chapter_id: int | None = None
+    level: int = 1
+
+
+class KnowledgePointEdge(BaseModel):
+    from_id: int
+    to_id: int
+    relation_type: str = "prerequisite"
+    confidence: float = 0.85
+
+
+class KnowledgeGraphGenerateRequest(BaseModel):
+    course_id: int
+    document_ids: list[int] | None = None
+    chapter_id: int | None = None
+
+
+class KnowledgeGraphGenerateResponse(BaseModel):
+    task_id: str
+    status: str = "queued"
+
+
+class KnowledgeGraphDetail(BaseModel):
+    id: int
+    course_id: int
+    version: int
+    status: str
+    nodes: list[KnowledgePointNode]
+    edges: list[KnowledgePointEdge]
+    generated_by: int | None = None
+    reviewed_by: int | None = None
+    reviewed_at: str | None = None
+    created_at: str
+
+
+class KnowledgePointLinkRequest(BaseModel):
+    question_id: int
+    knowledge_point_ids: list[int] = Field(min_length=1)
+
+
+class KnowledgePointMastery(BaseModel):
+    knowledge_point_id: int
+    knowledge_point_name: str
+    total_questions: int
+    correct_count: int
+    accuracy_rate: float
+    level: str
+
+
+class StudentKnowledgeProfile(BaseModel):
+    student_id: int
+    course_id: int
+    knowledge_points: list[KnowledgePointMastery]
+    weak_areas: list[str]
+    recommended_path: list[str]

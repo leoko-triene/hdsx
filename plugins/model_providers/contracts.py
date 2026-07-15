@@ -15,6 +15,7 @@ class ModelRuntimeConfig:
     llm_base_url: str = "http://localhost:11434"
     llm_model: str = "qwen2.5:latest"
     llm_api_key: str = ""
+    llm_temperature: float | None = None
     embedding_provider: str = "ollama"
     embedding_base_url: str = "http://localhost:11434"
     embedding_model: str = "embeddinggemma:latest"
@@ -35,6 +36,16 @@ class ModelRuntimeConfig:
 class LLMProvider(ABC):
     @abstractmethod
     async def chat(self, system: str, user: str, json_mode: bool | dict = False) -> str: ...
+
+    async def chat_messages(self, messages: list[dict], json_mode: bool | dict = False) -> str:
+        system = ""
+        user = ""
+        for m in messages:
+            if m["role"] == "system":
+                system = m["content"]
+            elif m["role"] == "user":
+                user = m["content"]
+        return await self.chat(system, user, json_mode)
 
     @abstractmethod
     async def health(self) -> dict: ...

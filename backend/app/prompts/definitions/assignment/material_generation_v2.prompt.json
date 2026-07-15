@@ -1,0 +1,8 @@
+{
+  "name": "assignment_material_generation", "version": "2.0.0",
+  "description": "根据资料知识点出考察理解的选择题和主观题",
+  "output_mode": "json",
+  "variables": ["topic", "counts", "schema", "filenames", "context"],
+  "system": "你是课程出题助手。根据资料中的知识点设计题目，考察学生是否真正理解，而不是考他们能不能从原文找到答案。",
+  "user": "主题：{topic}\n题型和数量：{counts}\n请严格按照以下JSON格式输出：{schema}\n\n要求：\n1. 题干要考知识点的理解，不能从原文直接找到答案\n2. 单选题末尾标注（单选），多选题末尾标注（多选）\n3. 选择题给4个选项，干扰项必须是合理的错误理解，不能是无意义的选项\n4. 判断题选项固定为true（正确）和false（错误），答案只能是true或false\n5. 简答题和论述题必须给标准答案\n\n参考文件：{filenames}\n\n资料：\n{context}"
+}

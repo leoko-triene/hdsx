@@ -26,6 +26,7 @@ class RetrievedChunk:
 class RagAnswer:
     answer: str
     citations: list[dict] = field(default_factory=list)
-    confidence: float = 0.0
+    confidence_level: str = "中"
     insufficient_evidence: bool = False
     trace_id: str = ""
+    fallback: bool = False

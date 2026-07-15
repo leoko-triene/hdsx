@@ -13,18 +13,21 @@ from app.api.router import router
 from app.api.capabilities import router as capabilities_router
 from app.api.web_imports import router as web_imports_router
 from app.api.model_settings import router as model_settings_router
+from app.api.knowledge_graph import router as knowledge_graph_router
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.db.session import engine
 from app.integrations.ollama import OllamaClient
 from app.integrations.milvus import MilvusIndex
 from app.services.model_warmup import warmup_models
+from app.agents.validation import validate_agent_contracts
 
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    application.state.agent_contracts = validate_agent_contracts()
     application.state.model_warmup = await warmup_models()
     yield
 
@@ -70,6 +73,7 @@ async def ready():
     try: checks["milvus"] = MilvusIndex().health()
     except Exception as exc: checks["milvus"] = {"ok": False, "error": str(exc)}
     checks["model_warmup"] = getattr(app.state, "model_warmup", {"ok": False, "error": "启动预热尚未完成"})
+    checks["agent_contracts"] = getattr(app.state, "agent_contracts", {"ok": False, "error": "Agent 契约尚未校验"})
     ok = all(item.get("ok") for item in checks.values())
     return JSONResponse(status_code=200 if ok else 503, content={"status": "ready" if ok else "degraded", "checks": checks})
 
@@ -78,6 +82,7 @@ app.include_router(router, prefix=settings.api_prefix)
 app.include_router(capabilities_router, prefix=settings.api_prefix)
 app.include_router(web_imports_router, prefix=settings.api_prefix)
 app.include_router(model_settings_router, prefix=settings.api_prefix)
+app.include_router(knowledge_graph_router, prefix=settings.api_prefix)
 
 
 class SPAStaticFiles(StaticFiles):

@@ -33,6 +33,7 @@ frontend/coverage/
 *.sqlite3
 *.pem
 *.key
+test_kimi_api.py
 
 # 大型模型与运行数据
 models/
