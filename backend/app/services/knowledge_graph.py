@@ -461,6 +461,21 @@ class KnowledgeGraphService:
             raise NotFoundError("知识点图谱")
         return graph
 
+    def get_graph_by_id(self, graph_id: int) -> KnowledgePointGraph:
+        graph = self.db.get(KnowledgePointGraph, graph_id)
+        if not graph:
+            raise NotFoundError("知识点图谱")
+        return graph
+
+    def list_graph_versions(self, course_id: int) -> list[KnowledgePointGraph]:
+        return list(
+            self.db.scalars(
+                select(KnowledgePointGraph)
+                .where(KnowledgePointGraph.course_id == course_id)
+                .order_by(KnowledgePointGraph.version.desc())
+            ).all()
+        )
+
     def get_knowledge_points(self, course_id: int) -> list[dict]:
         kps = self.db.scalars(
             select(KnowledgePoint).where(KnowledgePoint.course_id == course_id)

@@ -297,6 +297,17 @@ class KnowledgeGraphDetail(BaseModel):
     created_at: str
 
 
+class KnowledgeGraphVersion(BaseModel):
+    id: int
+    course_id: int
+    version: int
+    status: str
+    generated_by: int | None = None
+    reviewed_by: int | None = None
+    reviewed_at: str | None = None
+    created_at: str
+
+
 class KnowledgePointLinkRequest(BaseModel):
     question_id: int
     knowledge_point_ids: list[int] = Field(min_length=1)

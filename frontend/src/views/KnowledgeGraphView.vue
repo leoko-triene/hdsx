@@ -7,10 +7,17 @@ import KnowledgeGraphChart from '../components/KnowledgeGraphChart.vue'
 const route = useRoute()
 const courseId = Number(route.params.courseId)
 const graph = ref<any>(null)
+const versions = ref<any[]>([])
+const selectedGraphId = ref<number | null>(null)
 const loading = ref(false)
 const generating = ref(false)
 const error = ref('')
 const message = ref('')
+
+const isLatest = computed(() => {
+  if (!graph.value || !versions.value.length) return true
+  return graph.value.id === versions.value[0].id
+})
 
 const showPointDialog = ref(false)
 const pointForm = ref<any>({id: 0, code: '', name: '', description: '', chapter_id: null})
@@ -38,11 +45,19 @@ const nodeMap = computed(() => {
 
 const knowledgePoints = computed(() => graph.value?.nodes || [])
 
-async function load() {
+async function load(versionId?: number | null) {
   loading.value = true
   error.value = ''
   try {
-    graph.value = (await api.get(`/knowledge-graphs/course/${courseId}`)).data
+    if (versionId) {
+      graph.value = (await api.get(`/knowledge-graphs/${versionId}`)).data
+      selectedGraphId.value = versionId
+    } else {
+      graph.value = (await api.get(`/knowledge-graphs/course/${courseId}`)).data
+      selectedGraphId.value = graph.value?.id || null
+    }
+    const versionsRes = await api.get(`/knowledge-graphs/course/${courseId}/versions`)
+    versions.value = versionsRes.data || []
   } catch (e: any) {
     if (e.message.includes('404')) graph.value = null
     else error.value = e.message
@@ -62,6 +77,16 @@ async function generate() {
   } finally {
     generating.value = false
   }
+}
+
+async function onSelectVersion(event: Event) {
+  const target = event.target as HTMLSelectElement
+  const value = target.value
+  if (!value) {
+    await load()
+    return
+  }
+  await load(Number(value))
 }
 
 async function approve() {
@@ -201,13 +226,23 @@ onMounted(load)
     </div>
 
     <div v-else class="card">
+      <div v-if="!isLatest" class="notice info">
+        当前正在查看历史版本 v{{ graph.version }}，手动编辑已禁用。
+      </div>
+
       <div class="section-header">
         <h2>
           图谱 v{{ graph.version }}
           <span :class="['status', graph.status]">{{ graph.status }}</span>
         </h2>
-        <div>
-          <button v-if="graph.status === 'draft'" @click="approve">审核通过</button>
+        <div class="header-actions">
+          <select :value="selectedGraphId" @change="onSelectVersion" class="version-select">
+            <option :value="null">最新版本</option>
+            <option v-for="v in versions" :key="v.id" :value="v.id">
+              v{{ v.version }} - {{ v.status }} ({{ new Date(v.created_at).toLocaleString() }})
+            </option>
+          </select>
+          <button v-if="graph.status === 'draft' && isLatest" @click="approve">审核通过</button>
           <button @click="generate">重新生成</button>
         </div>
       </div>
@@ -216,7 +251,7 @@ onMounted(load)
 
       <div class="section-header">
         <h3>知识点列表</h3>
-        <button @click="openPointDialog()">＋ 添加知识点</button>
+        <button v-if="isLatest" @click="openPointDialog()">＋ 添加知识点</button>
       </div>
       <table class="data-table">
         <thead>
@@ -229,8 +264,8 @@ onMounted(load)
             <td>{{ n.description }}</td>
             <td>{{ n.level }}</td>
             <td>
-              <button class="secondary small" @click="openPointDialog(n)">编辑</button>
-              <button class="danger small" @click="deletePoint(n)">删除</button>
+              <button v-if="isLatest" class="secondary small" @click="openPointDialog(n)">编辑</button>
+              <button v-if="isLatest" class="danger small" @click="deletePoint(n)">删除</button>
             </td>
           </tr>
         </tbody>
@@ -238,7 +273,7 @@ onMounted(load)
 
       <div class="section-header">
         <h3>知识关系</h3>
-        <button @click="openRelationDialog()">＋ 添加关系</button>
+        <button v-if="isLatest" @click="openRelationDialog()">＋ 添加关系</button>
       </div>
       <table class="data-table">
         <thead>
@@ -251,8 +286,8 @@ onMounted(load)
             <td>{{ nodeMap[e.to] || e.to }}</td>
             <td>{{ e.confidence }}</td>
             <td>
-              <button class="secondary small" @click="openRelationDialog(e)">编辑</button>
-              <button class="danger small" @click="deleteRelation(e)">删除</button>
+              <button v-if="isLatest" class="secondary small" @click="openRelationDialog(e)">编辑</button>
+              <button v-if="isLatest" class="danger small" @click="deleteRelation(e)">删除</button>
             </td>
           </tr>
         </tbody>
@@ -323,5 +358,21 @@ onMounted(load)
   justify-content: flex-end;
   gap: 12px;
   margin-top: 16px;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.version-select {
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: white;
+  min-width: 220px;
+}
+.info {
+  background: #e8f4fd;
+  color: #2e75b6;
 }
 </style>

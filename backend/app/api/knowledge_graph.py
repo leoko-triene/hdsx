@@ -6,6 +6,7 @@ from app.api.dependencies import current_user, require_roles
 from app.api.schemas import (
     KnowledgeGraphGenerateRequest,
     KnowledgeGraphGenerateResponse,
+    KnowledgeGraphVersion,
     KnowledgePointCreate,
     KnowledgePointNode,
     KnowledgePointRelationCreate,
@@ -60,6 +61,44 @@ def get_course_graph(
     service._sync_latest_graph(course_id)
     db.commit()
     db.refresh(graph)
+    return _to_detail(graph)
+
+
+@router.get("/course/{course_id}/versions", response_model=list[KnowledgeGraphVersion])
+def list_course_graph_versions(
+    course_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("teacher", "admin")),
+):
+    """List all historical versions of a course knowledge graph."""
+    service = KnowledgeGraphService(db)
+    service._owned_course(course_id, user)
+    graphs = service.list_graph_versions(course_id)
+    return [
+        {
+            "id": g.id,
+            "course_id": g.course_id,
+            "version": g.version,
+            "status": g.status,
+            "generated_by": g.generated_by,
+            "reviewed_by": g.reviewed_by,
+            "reviewed_at": g.reviewed_at.isoformat() if g.reviewed_at else None,
+            "created_at": g.created_at.isoformat() if g.created_at else None,
+        }
+        for g in graphs
+    ]
+
+
+@router.get("/{graph_id}")
+def get_graph_version(
+    graph_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("teacher", "admin")),
+):
+    """Get a specific knowledge graph version by its id."""
+    service = KnowledgeGraphService(db)
+    graph = service.get_graph_by_id(graph_id)
+    service._owned_course(graph.course_id, user)
     return _to_detail(graph)
 
 

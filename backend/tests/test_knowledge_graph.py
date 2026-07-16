@@ -7,7 +7,7 @@ import pytest
 
 from app.agents.knowledge_graph import KnowledgeGraphAgent
 from app.api.schemas import KnowledgeGraphGenerateRequest
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, NotFoundError
 from app.services.knowledge_graph import KnowledgeGraphService
 
 
@@ -297,3 +297,49 @@ def test_edit_requires_course_owner():
     user = SimpleNamespace(id=1, role="teacher")
     with pytest.raises(PermissionError):
         service.create_point(user, 1, {"code": "PY-10", "name": "循环"})
+
+
+def test_list_graph_versions_orders_by_version_desc():
+    db = MagicMock()
+    service = KnowledgeGraphService(db)
+
+    g1 = SimpleNamespace(
+        id=1, course_id=1, version=1, status="approved",
+        generated_by=1, reviewed_by=2, reviewed_at=None, created_at=datetime.now().astimezone()
+    )
+    g2 = SimpleNamespace(
+        id=2, course_id=1, version=2, status="draft",
+        generated_by=1, reviewed_by=None, reviewed_at=None, created_at=datetime.now().astimezone()
+    )
+    db.scalars.return_value = FakeScalarResult([g2, g1])
+
+    versions = service.list_graph_versions(1)
+
+    assert len(versions) == 2
+    assert versions[0].version == 2
+    assert versions[1].version == 1
+
+
+def test_get_graph_by_id_returns_version():
+    db = MagicMock()
+    service = KnowledgeGraphService(db)
+
+    graph = SimpleNamespace(
+        id=5, course_id=1, version=3, status="approved",
+        generated_by=1, reviewed_by=2, reviewed_at=None, created_at=datetime.now().astimezone()
+    )
+    db.get.return_value = graph
+
+    result = service.get_graph_by_id(5)
+
+    assert result == graph
+    db.get.assert_called_once()
+
+
+def test_get_graph_by_id_raises_when_missing():
+    db = MagicMock()
+    service = KnowledgeGraphService(db)
+    db.get.return_value = None
+
+    with pytest.raises(NotFoundError):
+        service.get_graph_by_id(999)
